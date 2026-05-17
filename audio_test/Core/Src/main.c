@@ -34,8 +34,8 @@ typedef enum { STATE_IDLE, STATE_RECORDING, STATE_TRANSMITTING } AppState;
 /* USER CODE BEGIN PD */
 #define PDM_BUF_SIZE        128    /* DMA circular buffer size (uint16) */
 #define PCM_FRAME_SIZE      32     /* 16 mono samples x 2 channels per half-transfer */
-#define RECORD_MS           2000   /* recording duration in milliseconds */
-#define TOTAL_PCM_SAMPLES   (RECORD_MS * PCM_FRAME_SIZE)  /* 2000 x 32 = 64000 */
+#define RECORD_MS           1000   /* recording duration in milliseconds */
+#define TOTAL_PCM_SAMPLES   (RECORD_MS * PCM_FRAME_SIZE)  /* 1000 x 32 = 32000 */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
