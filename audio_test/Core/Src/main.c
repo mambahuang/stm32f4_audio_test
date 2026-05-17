@@ -33,9 +33,10 @@ typedef enum { STATE_IDLE, STATE_RECORDING, STATE_TRANSMITTING } AppState;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define PDM_BUF_SIZE        128    /* DMA circular buffer size (uint16) */
-#define PCM_FRAME_SIZE      16     /* 16 mono samples per half-transfer */
+#define PCM_FRAME_SIZE      32     /* 16 stereo pairs per half-transfer (left+right) */
+#define MONO_FRAME_SIZE     16     /* 16 mono samples actually stored per half-transfer */
 #define RECORD_MS           3000   /* recording duration in milliseconds */
-#define TOTAL_PCM_SAMPLES   (RECORD_MS * PCM_FRAME_SIZE)  /* 3000 x 16 = 48000 */
+#define TOTAL_PCM_SAMPLES   (RECORD_MS * MONO_FRAME_SIZE)  /* 3000 x 16 = 48000 */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -472,15 +473,17 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 static void processPDMHalf(uint16_t *pPDM)
 {
-  static uint16_t pcmTemp[PCM_FRAME_SIZE];
+  static uint16_t pcmTemp[PCM_FRAME_SIZE];  /* 32 entries: stereo from filter */
 
   if (appState != STATE_RECORDING || recordingDone) return;
 
   MX_PDM2PCM_Process(pPDM, pcmTemp);
 
+  /* Extract left channel only (even indices): 16 mono samples per call */
   uint32_t remaining = TOTAL_PCM_SAMPLES - pcmIndex;
-  uint32_t toCopy    = (remaining < PCM_FRAME_SIZE) ? remaining : PCM_FRAME_SIZE;
-  memcpy(&pcmRecording[pcmIndex], pcmTemp, toCopy * sizeof(int16_t));
+  uint32_t toCopy    = (remaining < MONO_FRAME_SIZE) ? remaining : MONO_FRAME_SIZE;
+  for (uint32_t i = 0; i < toCopy; i++)
+    pcmRecording[pcmIndex + i] = (int16_t)pcmTemp[i * 2];
   pcmIndex += toCopy;
 
   if (pcmIndex >= TOTAL_PCM_SAMPLES)
