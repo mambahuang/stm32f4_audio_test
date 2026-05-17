@@ -17,9 +17,17 @@ while True:
         buf += ser.read(1)
 
     num_bytes = struct.unpack('<I', ser.read(4))[0]
-    print(f"\n[Frame {frame}] Receiving {num_bytes} bytes...")
+    print(f"\n[Frame {frame}] Expecting {num_bytes} bytes...")
 
-    raw = ser.read(num_bytes)
+    raw = b''
+    while len(raw) < num_bytes:
+        chunk = ser.read(num_bytes - len(raw))
+        if not chunk:
+            print(f"  WARNING: Timeout, got {len(raw)}/{num_bytes} bytes")
+            break
+        raw += chunk
+    print(f"  Actually received: {len(raw)} bytes ({len(raw)//2} samples, {len(raw)/2/16000:.2f}s @ 16kHz)")
+
     samples = np.frombuffer(raw, dtype=np.int16)
     left    = samples.astype(np.float32) / 32768.0
 
