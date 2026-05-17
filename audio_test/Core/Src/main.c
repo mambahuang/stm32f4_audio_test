@@ -27,15 +27,15 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum { STATE_IDLE, STATE_RECORDING, STATE_TRANSMITTING } AppState;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define PDM_BUF_SIZE        128    /* DMA circular buffer size (uint16) */
 #define PCM_FRAME_SIZE      32     /* 16 mono samples x 2 channels per half-transfer */
-#define RECORD_MS           500    /* recording duration in milliseconds */
-#define TOTAL_PCM_SAMPLES   (RECORD_MS * PCM_FRAME_SIZE)  /* 500 x 32 = 16000 */
+#define RECORD_MS           2000   /* recording duration in milliseconds */
+#define TOTAL_PCM_SAMPLES   (RECORD_MS * PCM_FRAME_SIZE)  /* 2000 x 32 = 64000 */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -54,8 +54,9 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 uint16_t pdmBuffer[PDM_BUF_SIZE];              /* DMA fills this in circular mode */
 int16_t  pcmRecording[TOTAL_PCM_SAMPLES];      /* stores converted PCM audio */
-volatile uint32_t pcmIndex     = 0;
+volatile uint32_t pcmIndex      = 0;
 volatile uint8_t  recordingDone = 0;
+volatile AppState appState      = STATE_IDLE;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -109,8 +110,8 @@ int main(void)
   MX_I2S2_Init();
   MX_PDM2PCM_Init();
   /* USER CODE BEGIN 2 */
-  HAL_GPIO_WritePin(GPIOD, LD4_Pin, GPIO_PIN_SET);   /* Green LED = recording */
-  HAL_I2S_Receive_DMA(&hi2s2, pdmBuffer, PDM_BUF_SIZE);
+  /* Red LED on = waiting for button press */
+  HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_SET);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -120,34 +121,67 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (recordingDone)
+    switch (appState)
     {
-      HAL_I2S_DMAStop(&hi2s2);
+      case STATE_IDLE:
+        /* Poll User button (B1 = PA0, active high) */
+        if (HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_SET)
+        {
+          HAL_Delay(50);  /* debounce */
+          if (HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_SET)
+          {
+            HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_RESET); /* Red off */
+            HAL_GPIO_WritePin(GPIOD, LD4_Pin, GPIO_PIN_SET);   /* Green on = recording */
+            pcmIndex      = 0;
+            recordingDone = 0;
+            appState      = STATE_RECORDING;
+            HAL_I2S_Receive_DMA(&hi2s2, pdmBuffer, PDM_BUF_SIZE);
+            /* Wait for button release before continuing */
+            while (HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_SET);
+          }
+        }
+        break;
 
-      HAL_GPIO_WritePin(GPIOD, LD4_Pin, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_SET);   /* Blue LED = transmitting */
+      case STATE_RECORDING:
+        if (recordingDone)
+        {
+          HAL_I2S_DMAStop(&hi2s2);
+          HAL_GPIO_WritePin(GPIOD, LD4_Pin, GPIO_PIN_RESET); /* Green off */
+          appState = STATE_TRANSMITTING;
+        }
+        break;
 
-      uint32_t byteCount = TOTAL_PCM_SAMPLES * sizeof(int16_t);
-      uint8_t header[8] = {
-        'P', 'C', 'M', '!',
-        (uint8_t)(byteCount),
-        (uint8_t)(byteCount >> 8),
-        (uint8_t)(byteCount >> 16),
-        (uint8_t)(byteCount >> 24)
-      };
-      HAL_UART_Transmit(&huart2, header, sizeof(header), HAL_MAX_DELAY);
-      HAL_UART_Transmit(&huart2, (uint8_t*)pcmRecording, byteCount, HAL_MAX_DELAY);
+      case STATE_TRANSMITTING:
+      {
+        uint32_t byteCount = TOTAL_PCM_SAMPLES * sizeof(int16_t);
+        uint8_t header[8] = {
+          'P', 'C', 'M', '!',
+          (uint8_t)(byteCount),
+          (uint8_t)(byteCount >> 8),
+          (uint8_t)(byteCount >> 16),
+          (uint8_t)(byteCount >> 24)
+        };
+        HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_SET);   /* Blue on = transmitting */
+        HAL_UART_Transmit(&huart2, header, sizeof(header), HAL_MAX_DELAY);
+        HAL_UART_Transmit(&huart2, (uint8_t*)pcmRecording, byteCount, HAL_MAX_DELAY);
+        HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_RESET); /* Blue off */
 
-      HAL_GPIO_WritePin(GPIOD, LD6_Pin, GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(GPIOD, LD3_Pin, GPIO_PIN_SET);   /* Orange LED = done */
-      HAL_Delay(200);
-      HAL_GPIO_WritePin(GPIOD, LD3_Pin, GPIO_PIN_RESET);
+        /* Blink orange 3 times = done */
+        for (int i = 0; i < 3; i++)
+        {
+          HAL_GPIO_WritePin(GPIOD, LD3_Pin, GPIO_PIN_SET);
+          HAL_Delay(150);
+          HAL_GPIO_WritePin(GPIOD, LD3_Pin, GPIO_PIN_RESET);
+          HAL_Delay(150);
+        }
 
-      /* restart for next cycle */
-      pcmIndex      = 0;
-      recordingDone = 0;
-      HAL_GPIO_WritePin(GPIOD, LD4_Pin, GPIO_PIN_SET);
-      HAL_I2S_Receive_DMA(&hi2s2, pdmBuffer, PDM_BUF_SIZE);
+        HAL_GPIO_WritePin(GPIOD, LD5_Pin, GPIO_PIN_SET);   /* Red on = ready */
+        appState = STATE_IDLE;
+        break;
+      }
+
+      default:
+        break;
     }
   }
   /* USER CODE END 3 */
@@ -440,7 +474,7 @@ static void processPDMHalf(uint16_t *pPDM)
 {
   static uint16_t pcmTemp[PCM_FRAME_SIZE];
 
-  if (recordingDone) return;
+  if (appState != STATE_RECORDING || recordingDone) return;
 
   MX_PDM2PCM_Process(pPDM, pcmTemp);
 
