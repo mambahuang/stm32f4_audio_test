@@ -43,7 +43,7 @@ void MX_PDM2PCM_Init(void)
   PDM1_filter_handler.endianness = PDM_FILTER_ENDIANNESS_LE;
   PDM1_filter_handler.high_pass_tap = 2104533974;
   PDM1_filter_handler.in_ptr_channels = 1;
-  PDM1_filter_handler.out_ptr_channels = 2;
+  PDM1_filter_handler.out_ptr_channels = 1;
   PDM_Filter_Init(&PDM1_filter_handler);
 
   PDM1_filter_config.decimation_factor = PDM_FILTER_DEC_FACTOR_64;
@@ -67,12 +67,8 @@ uint8_t MX_PDM2PCM_Process(uint16_t *PDMBuf, uint16_t *PCMBuf)
   for (uint32_t i = 0; i < 64; i++)
     swapped[i] = (PDMBuf[i] << 8) | (PDMBuf[i] >> 8);
 
-  /* PDM -> PCM: writes 16 samples to PCMBuf[0], PCMBuf[2], ... (left slots) */
+  /* PDM -> PCM: writes 16 mono samples to PCMBuf[0..15] */
   PDM_Filter((uint8_t *)swapped, PCMBuf, &PDM1_filter_handler);
-
-  /* duplicate left channel to right (mono mic -> stereo output) */
-  for (uint32_t i = 0; i < 16; i++)
-    PCMBuf[i * 2 + 1] = PCMBuf[i * 2];
 
   return 0;
 }

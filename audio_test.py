@@ -21,8 +21,7 @@ while True:
 
     raw = ser.read(num_bytes)
     samples = np.frombuffer(raw, dtype=np.int16)
-    stereo  = samples.reshape(-1, 2)
-    left    = stereo[:, 0].astype(np.float32) / 32768.0
+    left    = samples.astype(np.float32) / 32768.0
 
     # --- 音訊統計 ---
     rms = np.sqrt(np.mean(left ** 2))
@@ -31,13 +30,13 @@ while True:
     print(f"  Peak = {peak:.4f}  (接近 0 = 無聲, 接近 1 = 有聲音)")
 
     if peak < 0.001:
-        print("  ⚠️  訊號幾乎為零，可能是麥克風沒有接收到聲音")
+        print("  警告: 訊號幾乎為零，可能是麥克風沒有接收到聲音")
     elif rms > 0.01:
-        print("  ✅  偵測到音訊訊號！")
+        print("  偵測到音訊訊號！")
 
-    # --- 播放 ---
+    # --- 播放 (mono) ---
     print(f"  Playing {len(left)/SAMPLERATE:.2f}s ...")
-    sd.play(stereo.astype(np.float32) / 32768.0, SAMPLERATE)
+    sd.play(left, SAMPLERATE)
 
     # --- 波形圖 ---
     t = np.linspace(0, len(left) / SAMPLERATE, len(left))
@@ -52,9 +51,8 @@ while True:
     plt.show(block=False)
     plt.pause(0.1)
 
-    # --- 存成 WAV ---
-    wav.write(f"frame_{frame}.wav", SAMPLERATE,
-              stereo.astype(np.int16))
+    # --- 存成 WAV (mono) ---
+    wav.write(f"frame_{frame}.wav", SAMPLERATE, samples)
     print(f"  Saved: frame_{frame}.wav")
 
     sd.wait()
